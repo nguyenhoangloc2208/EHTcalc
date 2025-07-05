@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EHT Calculator</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <style>
+      .equipment-card {
+        border: 1px solid #ddd;
+        padding: 10px;
+        margin: 10px;
+        border-radius: 5px;
+      }
+      .stat-label {
+        font-weight: bold;
+        color: #666;
+      }
+      .equipment-list {
+        max-height: 400px;
+        overflow-y: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container mt-4">
+      <h1>Evil Hunter Tycoon Calculator</h1>
+
+      <!-- Hunter Creation -->
+      <div class="card mb-4">
+        <div class="card-header">
+          <h3>Create Hunter</h3>
+        </div>
+        <div class="card-body">
+          <form id="hunterForm">
+            <div class="row">
+              <div class="col-md-6">
+                <div class="mb-3">
+                  <label for="hunterName" class="form-label">Name</label>
+                  <input
+                    type="text"
+                    class="form-control"
+                    id="hunterName"
+                    required
+                  />
+                </div>
+                <div class="mb-3">
+                  <label for="hunterClass" class="form-label">Class</label>
+                  <select class="form-select" id="hunterClass" required>
+                    <option value="berserker">Berserker</option>
+                    <option value="ranger">Ranger</option>
+                    <option value="paladin">Paladin</option>
+                    <option value="sorcerer">Sorcerer</option>
+                  </select>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <h4>Base Stats</h4>
+                <div class="mb-2">
+                  <label for="baseHP" class="form-label">HP</label>
+                  <input
+                    type="number"
+                    class="form-control"
+                    id="baseHP"
+                    value="0"
+                  />
+                </div>
+                <div class="mb-2">
+                  <label for="baseATK" class="form-label">ATK</label>
+                  <input
+                    type="number"
+                    class="form-control"
+                    id="baseATK"
+                    value="0"
+                  />
+                </div>
+                <div class="mb-2">
+                  <label for="baseDEF" class="form-label">DEF</label>
+                  <input
+                    type="number"
+                    class="form-control"
+                    id="baseDEF"
+                    value="0"
+                  />
+                </div>
+                <!-- Add other stats -->
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Create Hunter</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Equipment Upload -->
+      <div class="card mb-4">
+        <div class="card-header">
+          <h3>Upload Equipment</h3>
+        </div>
+        <div class="card-body">
+          <form id="uploadForm">
+            <div class="mb-3">
+              <label for="equipmentImage" class="form-label"
+                >Equipment Screenshot</label
+              >
+              <input
+                type="file"
+                class="form-control"
+                id="equipmentImage"
+                accept="image/*"
+                required
+              />
+            </div>
+            <button type="submit" class="btn btn-primary">
+              Upload & Extract Stats
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Equipment List -->
+      <div class="card mb-4">
+        <div class="card-header">
+          <h3>Equipment Database</h3>
+        </div>
+        <div class="card-body equipment-list" id="equipmentList">
+          <!-- Equipment cards will be added here -->
+        </div>
+      </div>
+
+      <!-- Build Calculator -->
+      <div class="card mb-4">
+        <div class="card-header">
+          <h3>Build Calculator</h3>
+        </div>
+        <div class="card-body">
+          <form id="calculatorForm">
+            <div class="row">
+              <div class="col-md-6">
+                <h4>Stat Weights</h4>
+                <div class="mb-2">
+                  <label for="weightHP" class="form-label">HP Weight</label>
+                  <input
+                    type="number"
+                    class="form-control"
+                    id="weightHP"
+                    value="1"
+                    step="0.1"
+                  />
+                </div>
+                <div class="mb-2">
+                  <label for="weightATK" class="form-label">ATK Weight</label>
+                  <input
+                    type="number"
+                    class="form-control"
+                    id="weightATK"
+                    value="1"
+                    step="0.1"
+                  />
+                </div>
+                <!-- Add other weights -->
+              </div>
+              <div class="col-md-6">
+                <h4>Equipment Slots</h4>
+                <div class="mb-2">
+                  <label for="maxWeapons" class="form-label">Max Weapons</label>
+                  <input
+                    type="number"
+                    class="form-control"
+                    id="maxWeapons"
+                    value="1"
+                    min="0"
+                  />
+                </div>
+                <div class="mb-2">
+                  <label for="maxArmor" class="form-label">Max Armor</label>
+                  <input
+                    type="number"
+                    class="form-control"
+                    id="maxArmor"
+                    value="1"
+                    min="0"
+                  />
+                </div>
+                <!-- Add other slots -->
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary">
+              Calculate Optimal Build
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Results -->
+      <div class="card mb-4">
+        <div class="card-header">
+          <h3>Results</h3>
+        </div>
+        <div class="card-body" id="results">
+          <!-- Results will be displayed here -->
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+      // Add your JavaScript code here for form handling and API calls
+    </script>
+  </body>
+</html>
