@@ -3,6 +3,7 @@ import random
 import cv2
 import numpy as np
 from app.services.ocr import OCRService, DialogConfig
+import json
 
 def validate_dialog_box(width, height, x, y, w, h):
     """Validate dialog box dimensions and position."""
@@ -308,11 +309,30 @@ def test_regions():
                         # Process effects
                         effects = OCRService.process_effects_region(dialog_img, DialogConfig.EFFECTS_REGION)
                         print("\nEffects:")
-                        for effect in effects:
-                            print(f"  - {effect}")
-                        
+                        print("  Raw effects:")
+                        for effect in effects.get('effects', []):
+                            print(f"    - {effect}")
+                        print("  Parsed effects:")
+                        for k, v in effects.get('parsed_effects', {}).items():
+                            print(f"    {k}: {v}")
+                        print("  Unparsed effects:")
+                        for effect in effects.get('unparsed_effects', []):
+                            print(f"    - {effect}")
+                        print("\nDebug image saved to:")
+                        print(f"  debug_images/{os.path.splitext(image_file)[0]}_processed.jpg")
                         print("-" * 30)
-                        
+
+                        # Save all data to debug_images/debug_data_1.json
+                        debug_data = {
+                            'name': name,
+                            'type': equip_type,
+                            'quality': quality,
+                            'stats': stats,
+                            'effects': effects
+                        }
+                        with open('debug_images/debug_data_1.json', 'w', encoding='utf-8') as f:
+                            json.dump(debug_data, f, ensure_ascii=False, indent=2)
+
                         # Draw OCR regions and grid on cropped image
                         draw_ocr_regions(dialog_img)
                         
@@ -410,11 +430,30 @@ def process_single_image(image_path, max_retries=10):
                     # Process effects
                     effects = OCRService.process_effects_region(dialog_img, DialogConfig.EFFECTS_REGION)
                     print("\nEffects:")
-                    for effect in effects:
-                        print(f"  - {effect}")
-                    
+                    print("  Raw effects:")
+                    for effect in effects.get('effects', []):
+                        print(f"    - {effect}")
+                    print("  Parsed effects:")
+                    for k, v in effects.get('parsed_effects', {}).items():
+                        print(f"    {k}: {v}")
+                    print("  Unparsed effects:")
+                    for effect in effects.get('unparsed_effects', []):
+                        print(f"    - {effect}")
+                    print("\nDebug image saved to:")
+                    print(f"  debug_images/{os.path.splitext(image_file)[0]}_processed.jpg")
                     print("-" * 30)
-                    
+
+                    # Save all data to debug_images/debug_data_1.json
+                    debug_data = {
+                        'name': name,
+                        'type': equip_type,
+                        'quality': quality,
+                        'stats': stats,
+                        'effects': effects
+                    }
+                    with open('debug_images/debug_data_1.json', 'w', encoding='utf-8') as f:
+                        json.dump(debug_data, f, ensure_ascii=False, indent=2)
+
                     # Draw OCR regions and grid on cropped image
                     draw_ocr_regions(dialog_img)
                     

@@ -213,46 +213,408 @@ class OCRService:
         return stats
 
     @staticmethod
-    def process_effects_region(image: np.ndarray, config: RegionConfig) -> List[str]:
-        """Process additional effects region."""
+    def auto_correct_effect_str(effect_str: str) -> str:
+        regex_corrections = [
+            (r'b[%o0]ss', 'boss'),
+            (r'p[%o0]imate', 'primate'),
+            (r'a[%o0]imal', 'animal'),
+            (r'u[%o0]ndead', 'undead'),
+            (r'd[%o0]mon', 'demon'),
+            (r'c[%o0]itical', 'critical'),
+            (r'h[%o0]t', 'hit'),
+            (r's[%o0]oe', 'shoe'),
+            (r'g[%o0]ove', 'glove'),
+            (r'r[%o0]ng', 'ring'),
+            (r'n[%o0]cklace', 'necklace'),
+            (r'b[%o0]lt', 'belt'),
+            (r'h[%o0]lm', 'helm'),
+            (r'a[%o0]mor', 'armor'),
+            (r'evasi[%o0]n', 'Evasion'),
+            (r'sl[%o0]t', 'slot'),
+            (r'weap[%o0]n', 'Weapon'),
+            (r'w[%o0]re', 'wore'),
+            (r'[%o0]ld', 'old'),
+            (r'c%nsumpti%n', 'consumption'),
+            (r'satiety', 'satiety'),
+            (r'Exp', 'exp'),
+            (r'w[%o0]rn', 'worn'),
+            (r'[%o0]riginal', 'original'),
+            (r'agains:', 'against'),
+            (r'b[%o0]{2}ts', 'Boots'),
+            (r'fr[%o0]m', 'from'),
+            (r'[%o0]f', 'of'),
+            (r'chance [%o0]f', 'chance of'),
+            (r'decreas[%o0]ng', 'reducing'),
+            (r'decreasing', 'reducing'),
+            (r'damage taken', 'damage_received'),
+            (r'suphemel', 'Supreme'),
+            (r'atk5pd', 'ATK SPD'),
+            (r'criticai', 'Critical'),
+            (r'criticaI', 'Critical'),
+            (r'lifesteai', 'Lifesteal'),
+            (r'lifesteaI', 'Lifesteal'),
+            (r'm[%o0]{2}d', 'Mood'),
+            (r'm[%o0]vement', 'Movement'),
+            (r'&', ''),
+            (r'["""]', ''),
+            (r'¢\+', ''),
+            (r'¢', ''),
+            (r'~', ''),
+            (r'©', ''),
+            (r'@', ''),
+            (r'»', ''),
+            (r'%f', 'of'),
+            (r'casting', 'cast'),
+            (r'bh:', 'by'),
+            (r'extra materials', 'bonus_materials'),
+            (r'getting', 'gain'),
+            (r'Critical Hit damage', 'crit_damage'),
+            (r'Critical Hit chance', 'crit_chance'),
+            (r'ATK SPD', 'atk_spd'),
+            (r'ATK', 'atk'),
+            (r'DEF', 'def'),
+            (r'HP', 'hp'),
+            (r'Evasion', 'evasion'),
+            (r'Movement Speed', 'move_speed'),
+            (r'(\d)\s+(\d)%', r'\1\2%'),  # nối số bị split như '1 6%' -> '16%'
+            (r'(\d)[^\d%]+%', r'\1%'),     # loại ký tự lạ giữa số và %
+        ]
+        for pattern, repl in regex_corrections:
+            effect_str = re.sub(pattern, repl, effect_str, flags=re.IGNORECASE)
+        effect_str = re.sub(r'^[^A-Za-z0-9]+', '', effect_str)
+        return effect_str
+
+    @staticmethod
+    def normalize_effect_str(effect_str: str) -> str:
+        effect_str = effect_str.strip()
+        effect_str = re.sub(r'^[^A-Za-z0-9]+', '', effect_str)
+        effect_str = re.sub(r'\s+', ' ', effect_str)
+        effect_str = re.sub(r'[.,;:!?]+$', '', effect_str)
+        return effect_str
+
+    @staticmethod
+    def parse_effect(effect_str: str) -> Tuple[Dict[str, float], str]:
+        original_str = effect_str
+        effect_str = OCRService.auto_correct_effect_str(effect_str)
+        effect_str = OCRService.normalize_effect_str(effect_str)
+        effect_str = effect_str.replace('°', '%').replace('º', '%').replace('o', '%')
+        if 'empty rune slot' in effect_str.lower():
+            return ({}, None)
+        # Parse compound effects: 'Increase atk by [VALUE1]% and def by [VALUE2]%' or similar
+        m = re.match(r"Increase ([a-z_]+) by (\d+)% and ([a-z_]+) by (\d+)%", effect_str, re.IGNORECASE)
+        if m:
+            stat1 = m.group(1).strip().lower()
+            value1 = float(m.group(2))
+            stat2 = m.group(3).strip().lower()
+            value2 = float(m.group(4))
+            stat_map = {
+                'atk': 'attack',
+                'def': 'defense',
+                'hp': 'hp',
+                'atk_spd': 'attack_speed',
+                'crit_damage': 'critical_hit_damage',
+                'crit_chance': 'critical_hit_chance',
+                'evasion': 'evasion',
+                'move_speed': 'movement_speed',
+            }
+            stat1_key = stat_map.get(stat1, stat1)
+            stat2_key = stat_map.get(stat2, stat2)
+            return ({f"{stat1_key}_percent": value1, f"{stat2_key}_percent": value2}, None)
+        # Nếu có nhiều số liệu trong một dòng, tự động split và parse từng phần
+        if re.search(r'\d+%.*\d+%', effect_str):
+            parts = re.split(r'(?<=\d%)\s*(?:and|,|\+|\s)\s*', effect_str)
+            parsed = {}
+            unparsed = []
+            for part in parts:
+                d, un = OCRService.parse_effect(part)
+                parsed.update(d)
+                if un:
+                    unparsed.append(un)
+            if parsed:
+                return (parsed, None if not unparsed else ', '.join(unparsed))
+        if '+' in effect_str:
+            parts = [p.strip() for p in effect_str.split('+') if p.strip()]
+            parsed = {}
+            unparsed = []
+            for part in parts:
+                d, un = OCRService.parse_effect(part)
+                parsed.update(d)
+                if un:
+                    unparsed.append(un)
+            if parsed:
+                return (parsed, None if not unparsed else ', '.join(unparsed))
+        if ',' in effect_str:
+            parts = [p.strip() for p in effect_str.split(',') if p.strip()]
+            parsed = {}
+            unparsed = []
+            for part in parts:
+                d, un = OCRService.parse_effect(part)
+                parsed.update(d)
+                if un:
+                    unparsed.append(un)
+            if parsed:
+                return (parsed, None if not unparsed else ', '.join(unparsed))
+        # 1. Increase atk_spd by [VALUE]%
+        m = re.match(r"Increase atk_spd by (\d+)%", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            return ({"atk_spd_percent": value}, None)
+        # 2. Increase crit_damage by [VALUE]%
+        m = re.match(r"Increase crit_damage by (\d+)%", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            return ({"critical_hit_damage_percent": value}, None)
+        # 3. Increase crit_chance by [VALUE]%
+        m = re.match(r"Increase crit_chance by (\d+)%", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            return ({"critical_hit_chance_percent": value}, None)
+        # 4. Increase def by [VALUE]%
+        m = re.match(r"Increase def by (\d+)%", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            return ({"def_percent": value}, None)
+        # 5. Increase hp by [VALUE]%
+        m = re.match(r"Increase hp by (\d+)%", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            return ({"hp_percent": value}, None)
+        # 6. Increase evasion by [VALUE]%
+        m = re.match(r"Increase evasion by (\d+)%", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            return ({"evasion_percent": value}, None)
+        # 7. Increase move_speed by [VALUE]%
+        m = re.match(r"Increase move_speed by (\d+)%", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            return ({"movement_speed_percent": value}, None)
+        # 8. Increase atk by [VALUE]%
+        m = re.match(r"Increase atk by (\d+)%", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            return ({"atk_percent": value}, None)
+        # 9. Increase Against [Target] type [VALUE]% damage (target thường)
+        m = re.match(r"Increase Against ([a-z_]+) type (\d+)% damage", effect_str, re.IGNORECASE)
+        if m:
+            target = m.group(1).strip().lower()
+            value = float(m.group(2))
+            return ({f"damage_vs_{target}_percent": value}, None)
+        # 1. Increase [STAT] by [VALUE]%
+        m = re.match(r"Increase ([A-Za-z ]+) by (\d+)%", effect_str, re.IGNORECASE)
+        if m:
+            stat = m.group(1).strip().lower().replace(' ', '_')
+            value = float(m.group(2))
+            return ({f"{stat}_percent": value}, None)
+        # 1b. Increase [STAT] [VALUE]% (không có 'by')
+        m = re.match(r"Increase ([A-Za-z ]+) (\d+)%", effect_str, re.IGNORECASE)
+        if m:
+            stat = m.group(1).strip().lower().replace(' ', '_')
+            value = float(m.group(2))
+            return ({f"{stat}_percent": value}, None)
+        # 1c. Increase [STAT] chance by [VALUE]%
+        m = re.match(r"Increase ([A-Za-z ]+) chance by (\d+)%", effect_str, re.IGNORECASE)
+        if m:
+            stat = m.group(1).strip().lower().replace(' ', '_')
+            value = float(m.group(2))
+            return ({f"{stat}_chance_percent": value}, None)
+        # 2. Increase [VALUE]% damage against [TARGET] types?
+        m = re.match(r"Increase (\d+)% damage against ([A-Za-z ]+?)(?: types?)?", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            target = m.group(2).strip().lower().replace(' ', '_')
+            return ({f"damage_vs_{target}_percent": value}, None)
+        # 2b. Increase Against [Target] type [VALUE]% damage
+        m = re.match(r"Increase Against ([A-Za-z ]+) type (\d+)% damage", effect_str, re.IGNORECASE)
+        if m:
+            target = m.group(1).strip().lower().replace(' ', '_')
+            value = float(m.group(2))
+            return ({f"damage_vs_{target}_percent": value}, None)
+        # 2c. Decrease [VALUE]% damage against [TARGET] types?
+        m = re.match(r"Decrease (\d+)% damage against ([A-Za-z ]+?)(?: types?)?", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            target = m.group(2).strip().lower().replace(' ', '_')
+            return ({f"damage_vs_{target}_percent": -value}, None)
+        # 2d. Increase Movement Speed by [VALUE]%
+        m = re.match(r"Increase Movement Speed by (\d+)%", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            return ({"movement_speed_percent": value}, None)
+        # 2e. Increase Evasion by [VALUE]%
+        m = re.match(r"Increase Evasion by (\d+)%", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            return ({"evasion_percent": value}, None)
+        # 2f. Decrease Against [Target] type [VALUE]% damage
+        m = re.match(r"Decrease Against ([A-Za-z ]+) type (\d+)% damage", effect_str, re.IGNORECASE)
+        if m:
+            target = m.group(1).strip().lower().replace(' ', '_')
+            value = float(m.group(2))
+            return ({f"damage_vs_{target}_percent": -value}, None)
+        # 2g. Increase Against [Target] type [VALUE]% damage
+        m = re.match(r"Increase Against ([A-Za-z ]+) type (\d+)% damage", effect_str, re.IGNORECASE)
+        if m:
+            target = m.group(1).strip().lower().replace(' ', '_')
+            value = float(m.group(2))
+            return ({f"damage_vs_{target}_percent": value}, None)
+        # 3. [VALUE]% chance of casting
+        m = re.match(r"(\d+)% chance of cast", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            return ({"chance_of_cast_percent": value}, None)
+        # 4. [VALUE]% chance to cast
+        m = re.match(r"(\d+)% chance to cast", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            return ({"chance_to_cast_percent": value}, None)
+        # 5. by [VALUE]% (standalone)
+        m = re.match(r"by (\d+)%", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            return ({"by_percent": value}, None)
+        # 6. Increase [VALUE]% EXP gain
+        m = re.match(r"Increase (\d+)% Exp gain", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            return ({"exp_gain_percent": value}, None)
+        # 7. [VALUE]% chance of [verb] [target]
+        m = re.match(r"(\d+)% chance of ([a-z]+) ([a-z_]+)", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            verb = m.group(2).strip().lower()
+            target = m.group(3).strip().lower()
+            return ({f"chance_{verb}_{target}_percent": value}, None)
+        # 8. Decrease [VALUE]% Mood consumption
+        m = re.match(r"Decrease (\d+)% Mood consumption", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            return ({"mood_consumption_percent": -value}, None)
+        # 9. Lifesteal [VALUE]% of total damage
+        m = re.match(r"Lifesteal (\d+)% of total damage", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            return ({"lifesteal_percent": value}, None)
+        # 10. [VALUE]% chance to transform into a [TARGET]
+        m = re.match(r"(\d+)% chance to transform into a ([A-Za-z ]+)", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            target = m.group(2).strip().lower().replace(' ', '_')
+            return ({f"chance_transform_into_{target}_percent": value}, None)
+        # 11. [VALUE]% chance to [verb] [target]
+        m = re.match(r"(\d+)% chance to ([a-z]+) ([a-z_]+)", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            verb = m.group(2).strip().lower()
+            target = m.group(3).strip().lower()
+            return ({f"chance_to_{verb}_{target}_percent": value}, None)
+        # 12. Decrease [VALUE]% Mood consumption
+        m = re.match(r"Decrease (\d+)% Mood consumption", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            return ({"mood_consumption_percent": -value}, None)
+        # 13. Lifesteal [VALUE]% of total damage
+        m = re.match(r"Lifesteal (\d+)% of total damage", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            return ({"lifesteal_percent": value}, None)
+        # 14. [VALUE]% chance to transform into a [TARGET]
+        m = re.match(r"(\d+)% chance to transform into a ([A-Za-z ]+)", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            target = m.group(2).strip().lower().replace(' ', '_')
+            return ({f"chance_transform_into_{target}_percent": value}, None)
+        # 15. [VALUE]% chance to [verb] [target]
+        m = re.match(r"(\d+)% chance to ([a-z]+) ([a-z_]+)", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            verb = m.group(2).strip().lower()
+            target = m.group(3).strip().lower()
+            return ({f"chance_to_{verb}_{target}_percent": value}, None)
+        # 1. [VALUE]% chance of reducing damage_received
+        m = re.match(r"(\d+)% chance of reducing damage_received", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            return ({"chance_reduce_damage_received_percent": value}, None)
+        # 2. [VALUE]% chance to reduce damage_received
+        m = re.match(r"(\d+)% chance to reduce damage_received", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            return ({"chance_reduce_damage_received_percent": value}, None)
+        # 3. [VALUE]% damage_received
+        m = re.match(r"(\d+)% damage_received", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            return ({"damage_received_percent": value}, None)
+        # 1. [VALUE]% chance of gain bonus_materials
+        m = re.match(r"(\d+)% chance of gain bonus_materials", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            return ({"chance_gain_bonus_materials_percent": value}, None)
+        # 2. Decrease crit_damage by [VALUE]%
+        m = re.match(r"Decrease crit_damage by (\d+)%", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            return ({"crit_damage_percent": -value}, None)
+        # 10. Increase Against boss type [VALUE]% damage
+        m = re.match(r"Increase Against boss type (\d+)% damage", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            return ({"damage_vs_boss_percent": value}, None)
+        # Decrease [VALUE]% exp gain
+        m = re.match(r"Decrease (\d+)% exp gain", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            return ({"exp_gain_percent": -value}, None)
+        # Increase [VALUE]% satiety consumption
+        m = re.match(r"Increase (\d+)% satiety consumption", effect_str, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            return ({"satiety_consumption_percent": value}, None)
+        return ({}, f"original: {original_str} | corrected: {effect_str}")
+
+    @staticmethod
+    def process_effects_region(image: np.ndarray, config: RegionConfig) -> Dict[str, Any]:
+        """Process additional effects region and return both raw and structured effects."""
         # Crop and preprocess
         region = OCRService.crop_region(image, config)
         processed = OCRService.preprocess_for_ocr(region)
-        
         # OCR with specific config
         text = pytesseract.image_to_string(processed, config=config.ocr_config)
-        
         effects = []
         current_effect = ""
-        
         for line in text.split('\n'):
             line = line.strip()
             if not line:
                 continue
-                
             if any(effect_start in line for effect_start in ['Increase', 'Decrease', 'Lifesteal', 'Empty rune']):
                 if current_effect:
                     effects.append(current_effect)
                 current_effect = line
             elif current_effect:
                 current_effect += " " + line
-                
-                # Check if effect is complete
                 if any(end in current_effect.lower() for end in ['damage', 'consumption', 'slot', '%']):
                     effects.append(current_effect)
                     current_effect = ""
-        
-        # Add any remaining effect
         if current_effect:
             effects.append(current_effect)
-        
-        # Clean up effects
         effects = [
             effect for effect in effects
             if len(effect) > 5 and not any(skip in effect.lower() for skip in ['number of attempts', 'the old', 'warm new'])
         ]
-        
-        return effects
+        # Parse effects
+        parsed = {}
+        unparsed = []
+        for eff in effects:
+            d, un = OCRService.parse_effect(eff)
+            parsed.update(d)
+            if un:
+                unparsed.append(un)
+        return {
+            'effects': effects,
+            'parsed_effects': parsed,
+            'unparsed_effects': unparsed
+        }
 
     @staticmethod
     def save_debug_regions(image: np.ndarray, base_path: str):
@@ -459,13 +821,12 @@ class OCRService:
         )
         stats = OCRService.process_stats_region(dialog_img, DialogConfig.STATS_REGION)
         effects = OCRService.process_effects_region(dialog_img, DialogConfig.EFFECTS_REGION)
-        
         return {
             'name': name,
             'type': equip_type,
             'rarity': quality,
             'stats': stats,
-            'additional_effects': {'effects': effects}
+            'additional_effects': effects
         }
 
     @staticmethod
@@ -573,4 +934,15 @@ class OCRService:
             # Add label
             cv2.putText(img, "Dialog Box", (x, y-10),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-        cv2.imwrite(output_path, img) 
+        cv2.imwrite(output_path, img)
+
+    @staticmethod
+    def get_raw_text(image_path: str) -> str:
+        """Trả về toàn bộ text OCR thô từ ảnh."""
+        import cv2
+        img = cv2.imread(image_path)
+        if img is None:
+            return ""
+        processed = OCRService.preprocess_for_ocr(img)
+        text = pytesseract.image_to_string(processed)
+        return text 
